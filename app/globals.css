@@ -1,0 +1,50 @@
+:root {
+  color-scheme: light;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+  background: radial-gradient(circle at top, #fff7e8, #f2d9b1 55%, #e9c38a 100%);
+  color: #2a200f;
+  min-height: 100vh;
+  display: flex;
+}
+
+.page {
+  margin: auto;
+  padding: 48px 24px;
+}
+
+.card {
+  display: grid;
+  gap: 16px;
+  justify-items: center;
+  padding: 32px 28px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.85);
+  box-shadow: 0 24px 60px rgba(70, 45, 0, 0.25);
+  backdrop-filter: blur(6px);
+}
+
+.gif {
+  width: min(70vw, 320px);
+  height: auto;
+  border-radius: 18px;
+  border: 6px solid #2a200f;
+  background: #ffffff;
+}
+
+.caption {
+  margin: 0;
+  font-size: 1.1rem;
+  letter-spacing: 0.02em;
+}
+
+.tenor-gif-embed {
+  width: min(70vw, 360px);
+}
