@@ -1,24 +1,43 @@
-import Script from 'next/script';
+import { supabase } from "../lib/supabaseClient";
 
-export default function Home() {
+export default async function Home() {
+  const { data: majors, error } = await supabase
+    .from("university_majors")
+    .select("name")
+    .order("name", { ascending: true });
+
   return (
     <main className="page">
       <div className="card">
-        <div
-          className="tenor-gif-embed"
-          data-postid="10874319"
-          data-share-method="host"
-          data-aspect-ratio="1.77778"
-          data-width="100%"
-        >
-          <a href="https://tenor.com/view/minions-hello-screen-kiss-gif-10874319">
-            Minions Hello GIF
-          </a>
-          from <a href="https://tenor.com/search/minions-gifs">Minions GIFs</a>
-        </div>
+        <h1 className="caption">Majors</h1>
 
-        <Script src="https://tenor.com/embed.js" strategy="afterInteractive" />
-        <p className="caption">Hello, Next.js 👋</p>
+        {error ? (
+          <p className="caption">Failed to load majors: {error.message}</p>
+        ) : majors && majors.length > 0 ? (
+          <div className="table-shell" role="region" aria-label="Majors list">
+            <table className="majors-table">
+              <thead>
+                <tr>
+                  <th>Major</th>
+                </tr>
+              </thead>
+              <tbody>
+                {majors.map((major, index) => (
+                  <tr
+                    key={major.name}
+                    style={{
+                      backgroundColor: index % 2 === 0 ? "#f5f5f5" : "#ffffff",
+                    }}
+                  >
+                    <td>{major.name}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p className="caption">No majors found.</p>
+        )}
       </div>
     </main>
   );
