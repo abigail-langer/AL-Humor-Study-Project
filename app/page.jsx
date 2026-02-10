@@ -1,10 +1,17 @@
 import Link from "next/link";
 import CaptionSort from "./CaptionSort";
-import { supabase } from "../lib/supabaseClient";
+import SignInButton from "./SignInButton";
+import SignOutButton from "./SignOutButton";
+import { createSupabaseServerClient } from "../lib/supabaseServer";
 
 const PAGE_SIZE = 12;
 
 export default async function Home({ searchParams }) {
+  const supabase = createSupabaseServerClient();
+  const {
+    data: { session },
+  } = await supabase.auth.getSession();
+  const userEmail = session?.user?.email ?? null;
   const currentSort = searchParams?.sort || "recent";
   const currentPage = Math.max(
     1,
@@ -12,6 +19,22 @@ export default async function Home({ searchParams }) {
   );
   const from = (currentPage - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
+
+  if (!session) {
+    return (
+      <main className="page">
+        <div className="page-header">
+          <h1 className="page-title">Captions</h1>
+        </div>
+        <div className="gate-card">
+          <p className="gate-text">
+            Sign in with Google to view and sort captions.
+          </p>
+          <SignInButton />
+        </div>
+      </main>
+    );
+  }
 
   let query = supabase
     .from("captions")
@@ -61,7 +84,11 @@ export default async function Home({ searchParams }) {
     <main className="page">
       <div className="page-header">
         <h1 className="page-title">Captions</h1>
-        <CaptionSort value={currentSort} />
+        <div className="page-actions">
+          <CaptionSort value={currentSort} />
+          {userEmail ? <span className="user-email">{userEmail}</span> : null}
+          <SignOutButton />
+        </div>
       </div>
       {error ? (
         <p className="caption">Failed to load captions: {error.message}</p>
@@ -84,11 +111,11 @@ export default async function Home({ searchParams }) {
                       alt={caption.content || "Caption image"}
                       loading="lazy"
                     />
-                ) : (
-                  <div className="caption-image caption-image--placeholder">
-                    <span>No Image</span>
-                  </div>
-                )}
+                  ) : (
+                    <div className="caption-image caption-image--placeholder">
+                      <span>No image</span>
+                    </div>
+                  )}
 
                   <div className="caption-body">
                     <p className="caption-text">
@@ -96,10 +123,10 @@ export default async function Home({ searchParams }) {
                     </p>
                     <div className="caption-meta">
                       <span className="caption-like">
-                      Likes: {caption.like_count ?? 0}
-                    </span>
+                        Likes: {caption.like_count ?? 0}
+                      </span>
+                    </div>
                   </div>
-                </div>
                 </article>
               );
             })}

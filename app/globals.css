@@ -31,6 +31,26 @@ body {
   gap: 12px 24px;
 }
 
+.page-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.user-email {
+  font-size: 0.85rem;
+  color: rgba(42, 32, 15, 0.7);
+  padding: 6px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 32, 15, 0.15);
+  background: rgba(255, 255, 255, 0.8);
+  max-width: min(40vw, 240px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .page-title {
   margin: 0;
   font-size: clamp(1.6rem, 2vw + 1rem, 2.4rem);
@@ -56,6 +76,44 @@ body {
   background: rgba(255, 255, 255, 0.9);
   font-size: 0.9rem;
   letter-spacing: 0.02em;
+}
+
+.gate-card {
+  width: min(92vw, 520px);
+  padding: 24px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid rgba(42, 32, 15, 0.12);
+  box-shadow: 0 12px 30px rgba(70, 45, 0, 0.15);
+  display: grid;
+  gap: 16px;
+}
+
+.gate-text {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.auth-button {
+  justify-self: start;
+  padding: 10px 18px;
+  border-radius: 999px;
+  border: 1px solid rgba(42, 32, 15, 0.25);
+  background: #2a200f;
+  color: #fff7e8;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  cursor: pointer;
+}
+
+.auth-button--ghost {
+  background: rgba(255, 255, 255, 0.9);
+  color: #2a200f;
+}
+
+.auth-button:hover {
+  filter: brightness(1.05);
 }
 
 .caption-grid {
