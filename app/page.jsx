@@ -1,44 +1,135 @@
+import Link from "next/link";
+import CaptionSort from "./CaptionSort";
 import { supabase } from "../lib/supabaseClient";
 
-export default async function Home() {
-  const { data: majors, error } = await supabase
-    .from("university_majors")
-    .select("name")
-    .order("name", { ascending: true });
+const PAGE_SIZE = 12;
+
+export default async function Home({ searchParams }) {
+  const currentSort = searchParams?.sort || "recent";
+  const currentPage = Math.max(
+    1,
+    Number.parseInt(searchParams?.page, 10) || 1
+  );
+  const from = (currentPage - 1) * PAGE_SIZE;
+  const to = from + PAGE_SIZE - 1;
+
+  let query = supabase
+    .from("captions")
+    .select(
+      `
+        id,
+        content,
+        like_count,
+        image_id,
+        image:images (*)
+      `,
+      { count: "exact" }
+    )
+    .range(from, to);
+
+  if (currentSort === "likes_desc") {
+    query = query
+      .order("like_count", { ascending: false })
+      .order("created_datetime_utc", { ascending: false });
+  } else if (currentSort === "likes_asc") {
+    query = query
+      .order("like_count", { ascending: true })
+      .order("created_datetime_utc", { ascending: false });
+  } else {
+    query = query.order("created_datetime_utc", { ascending: false });
+  }
+
+  const { data: captions, error, count } = await query;
+
+  const resolveImageUrl = (image) =>
+    image?.url ||
+    image?.image_url ||
+    image?.public_url ||
+    image?.file_url ||
+    image?.storage_url ||
+    image?.storage_path ||
+    null;
+
+  const totalPages = count ? Math.max(1, Math.ceil(count / PAGE_SIZE)) : 1;
+  const prevPage = currentPage > 1 ? currentPage - 1 : null;
+  const nextPage =
+    count && currentPage < totalPages ? currentPage + 1 : null;
+  const sortParam =
+    currentSort && currentSort !== "recent" ? `&sort=${currentSort}` : "";
 
   return (
     <main className="page">
-      <div className="card">
-        <h1 className="caption">Majors</h1>
-
-        {error ? (
-          <p className="caption">Failed to load majors: {error.message}</p>
-        ) : majors && majors.length > 0 ? (
-          <div className="table-shell" role="region" aria-label="Majors list">
-            <table className="majors-table">
-              <thead>
-                <tr>
-                  <th>Major</th>
-                </tr>
-              </thead>
-              <tbody>
-                {majors.map((major, index) => (
-                  <tr
-                    key={major.name}
-                    style={{
-                      backgroundColor: index % 2 === 0 ? "#f5f5f5" : "#ffffff",
-                    }}
-                  >
-                    <td>{major.name}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
-          <p className="caption">No majors found.</p>
-        )}
+      <div className="page-header">
+        <h1 className="page-title">Captions</h1>
+        <CaptionSort value={currentSort} />
       </div>
+      {error ? (
+        <p className="caption">Failed to load captions: {error.message}</p>
+      ) : captions && captions.length > 0 ? (
+        <div className="caption-section">
+          <div className="caption-grid" role="list">
+            {captions.map((caption) => {
+              const imageUrl = resolveImageUrl(caption.image);
+
+              return (
+                <article
+                  className="caption-card"
+                  key={caption.id}
+                  role="listitem"
+                >
+                  {imageUrl ? (
+                    <img
+                      className="caption-image"
+                      src={imageUrl}
+                      alt={caption.content || "Caption image"}
+                      loading="lazy"
+                    />
+                ) : (
+                  <div className="caption-image caption-image--placeholder">
+                    <span>No Image</span>
+                  </div>
+                )}
+
+                  <div className="caption-body">
+                    <p className="caption-text">
+                      {caption.content || "Untitled caption"}
+                    </p>
+                    <div className="caption-meta">
+                      <span className="caption-like">
+                      Likes: {caption.like_count ?? 0}
+                    </span>
+                  </div>
+                </div>
+                </article>
+              );
+            })}
+          </div>
+
+          <div className="pagination">
+            <Link
+              className={`page-link ${!prevPage ? "is-disabled" : ""}`}
+              href={prevPage ? `/?page=${prevPage}${sortParam}` : "#"}
+              aria-disabled={!prevPage}
+              tabIndex={!prevPage ? -1 : 0}
+            >
+              Previous
+            </Link>
+            <span className="page-status">
+              Page {currentPage} of {totalPages}
+            </span>
+            <Link
+              className={`page-link ${!nextPage ? "is-disabled" : ""}`}
+              href={nextPage ? `/?page=${nextPage}${sortParam}` : "#"}
+              aria-disabled={!nextPage}
+              tabIndex={!nextPage ? -1 : 0}
+            >
+              Next
+            </Link>
+          </div>
+        </div>
+      ) : (
+        <p className="caption">No captions found.</p>
+      )}
     </main>
   );
 }
