@@ -2,6 +2,7 @@ import Link from "next/link";
 import CaptionSort from "./CaptionSort";
 import SignInButton from "./SignInButton";
 import SignOutButton from "./SignOutButton";
+import { submitCaptionVote } from "./actions";
 import { createSupabaseServerClient } from "../lib/supabaseServer";
 
 const PAGE_SIZE = 12;
@@ -9,9 +10,9 @@ const PAGE_SIZE = 12;
 export default async function Home({ searchParams }) {
   const supabase = createSupabaseServerClient();
   const {
-    data: { session },
-  } = await supabase.auth.getSession();
-  const userEmail = session?.user?.email ?? null;
+    data: { user },
+  } = await supabase.auth.getUser();
+  const userEmail = user?.email ?? null;
   const currentSort = searchParams?.sort || "recent";
   const currentPage = Math.max(
     1,
@@ -20,7 +21,7 @@ export default async function Home({ searchParams }) {
   const from = (currentPage - 1) * PAGE_SIZE;
   const to = from + PAGE_SIZE - 1;
 
-  if (!session) {
+  if (!user) {
     return (
       <main className="page">
         <div className="page-header">
@@ -63,6 +64,20 @@ export default async function Home({ searchParams }) {
   }
 
   const { data: captions, error, count } = await query;
+  const captionIds = (captions ?? []).map((caption) => caption.id);
+  let voteByCaptionId = new Map();
+
+  if (captionIds.length > 0) {
+    const { data: existingVotes } = await supabase
+      .from("caption_votes")
+      .select("caption_id, vote_value")
+      .eq("profile_id", user.id)
+      .in("caption_id", captionIds);
+
+    voteByCaptionId = new Map(
+      (existingVotes ?? []).map((vote) => [vote.caption_id, vote.vote_value])
+    );
+  }
 
   const resolveImageUrl = (image) =>
     image?.url ||
@@ -79,6 +94,19 @@ export default async function Home({ searchParams }) {
     count && currentPage < totalPages ? currentPage + 1 : null;
   const sortParam =
     currentSort && currentSort !== "recent" ? `&sort=${currentSort}` : "";
+  const redirectParams = new URLSearchParams();
+
+  Object.entries(searchParams ?? {}).forEach(([key, value]) => {
+    if (typeof value === "string") {
+      redirectParams.set(key, value);
+    } else if (Array.isArray(value) && value.length > 0) {
+      redirectParams.set(key, value[0]);
+    }
+  });
+
+  const redirectTo = redirectParams.toString()
+    ? `/?${redirectParams.toString()}`
+    : "/";
 
   return (
     <main className="page">
@@ -97,6 +125,9 @@ export default async function Home({ searchParams }) {
           <div className="caption-grid" role="list">
             {captions.map((caption) => {
               const imageUrl = resolveImageUrl(caption.image);
+              const voteValue = voteByCaptionId.get(caption.id);
+              const hasUpvoted = voteValue === 1;
+              const hasDownvoted = voteValue === -1;
 
               return (
                 <article
@@ -125,6 +156,38 @@ export default async function Home({ searchParams }) {
                       <span className="caption-like">
                         Likes: {caption.like_count ?? 0}
                       </span>
+                      <form className="vote-form" action={submitCaptionVote}>
+                        <input
+                          type="hidden"
+                          name="caption_id"
+                          value={caption.id}
+                        />
+                        <input
+                          type="hidden"
+                          name="redirect_to"
+                          value={redirectTo}
+                        />
+                        <button
+                          className={`vote-button ${hasUpvoted ? "vote-button--active-up" : ""}`}
+                          type="submit"
+                          name="vote"
+                          value="up"
+                          aria-pressed={hasUpvoted}
+                          disabled={hasUpvoted}
+                        >
+                          Upvote
+                        </button>
+                        <button
+                          className={`vote-button vote-button--down ${hasDownvoted ? "vote-button--active-down" : ""}`}
+                          type="submit"
+                          name="vote"
+                          value="down"
+                          aria-pressed={hasDownvoted}
+                          disabled={hasDownvoted}
+                        >
+                          Downvote
+                        </button>
+                      </form>
                     </div>
                   </div>
                 </article>
