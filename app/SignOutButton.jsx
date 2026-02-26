@@ -10,7 +10,7 @@ export default function SignOutButton() {
   };
 
   return (
-    <button className="auth-button auth-button--ghost" type="button" onClick={handleSignOut}>
+    <button className="btn btn-ghost btn-sm" type="button" onClick={handleSignOut}>
       Sign out
     </button>
   );
