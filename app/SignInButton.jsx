@@ -7,14 +7,12 @@ export default function SignInButton() {
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signInWithOAuth({
       provider: "google",
-      options: {
-        redirectTo: `${window.location.origin}/auth/callback`,
-      },
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
     });
   };
 
   return (
-    <button className="auth-button" type="button" onClick={handleSignIn}>
+    <button className="btn btn-brand btn-lg" type="button" onClick={handleSignIn}>
       Sign in with Google
     </button>
   );

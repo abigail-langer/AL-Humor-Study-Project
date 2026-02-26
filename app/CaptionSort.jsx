@@ -2,33 +2,41 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 
+const OPTIONS = [
+  { value: "recent",     label: "Recent"     },
+  { value: "likes_desc", label: "Most Liked" },
+  { value: "likes_asc",  label: "Least Liked" },
+];
+
 export default function CaptionSort({ value }) {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const handleChange = (event) => {
-    const nextValue = event.target.value;
+  const handleChange = (nextValue) => {
     const params = new URLSearchParams(searchParams.toString());
-
     if (nextValue === "recent") {
       params.delete("sort");
     } else {
       params.set("sort", nextValue);
     }
-
     params.set("page", "1");
-    const queryString = params.toString();
-    router.push(queryString ? `/?${queryString}` : "/");
+    const qs = params.toString();
+    router.push(qs ? `/?${qs}` : "/");
   };
 
   return (
-    <label className="sort-control">
-      <span className="sort-label">SORT:</span>
-      <select className="sort-select" value={value} onChange={handleChange}>
-        <option value="recent">Most Recent</option>
-        <option value="likes_desc">Most Likes</option>
-        <option value="likes_asc">Least Likes</option>
-      </select>
-    </label>
+    <div className="sort-pills" role="group" aria-label="Sort captions">
+      {OPTIONS.map((opt) => (
+        <button
+          key={opt.value}
+          className={`sort-pill${value === opt.value ? " sort-pill--active" : ""}`}
+          onClick={() => handleChange(opt.value)}
+          aria-pressed={value === opt.value}
+          type="button"
+        >
+          {opt.label}
+        </button>
+      ))}
+    </div>
   );
 }
