@@ -2,8 +2,12 @@ import Link from "next/link";
 import CaptionSort from "./CaptionSort";
 import SignInButton from "./SignInButton";
 import SignOutButton from "./SignOutButton";
+import UploadImage from "./UploadImage";
 import { submitCaptionVote } from "./actions";
 import { createSupabaseServerClient } from "../lib/supabaseServer";
+
+// This page reads auth cookies and calls external APIs — always render at request time.
+export const dynamic = "force-dynamic";
 
 const PAGE_SIZE = 12;
 
@@ -118,6 +122,10 @@ export default async function Home({ searchParams }) {
           <SignOutButton />
         </div>
       </div>
+
+      {/* Image upload + caption generation */}
+      <UploadImage />
+
       {error ? (
         <p className="caption">Failed to load captions: {error.message}</p>
       ) : captions && captions.length > 0 ? (
