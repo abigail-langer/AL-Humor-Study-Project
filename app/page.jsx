@@ -51,7 +51,22 @@ export default async function Home({ searchParams }) {
   let query = supabase
     .from("captions")
     .select(
-      `id, content, like_count, image_id, image:images (*)`,
+      // Only request the specific image columns resolveImageUrl actually reads.
+      // Selecting image:images (*) pulls every column and triggers statement
+      // timeouts on large tables — named columns let Postgres push the projection
+      // down to the join so far less data is transferred.
+      `id,
+       content,
+       like_count,
+       image_id,
+       image:images (
+         url,
+         image_url,
+         public_url,
+         file_url,
+         storage_url,
+         storage_path
+       )`,
       { count: "exact" }
     )
     .range(from, to);
