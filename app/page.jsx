@@ -1,5 +1,3 @@
-import Link from "next/link";
-import CaptionSort from "./CaptionSort";
 import SignInButton from "./SignInButton";
 import SignOutButton from "./SignOutButton";
 import UploadImage from "./UploadImage";
@@ -8,7 +6,37 @@ import { createSupabaseServerClient } from "../lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
 
-const PAGE_SIZE = 12;
+// ── helpers ──────────────────────────────────────────────────────────────────
+
+const resolveImageUrl = (image) => {
+  if (!image) return null;
+  const candidates = [
+    image.url,
+    image.image_url,
+    image.public_url,
+    image.file_url,
+    image.storage_url,
+    image.storage_path,
+    image.cdn_url,
+    image.source_url,
+    image.original_url,
+  ];
+  const named = candidates.find((v) => typeof v === "string" && v.length > 0);
+  if (named) return named;
+  return (
+    Object.values(image).find(
+      (v) => typeof v === "string" && (v.startsWith("http") || v.startsWith("/"))
+    ) ?? null
+  );
+};
+
+const fetchImagesByIds = async (supabase, ids) => {
+  if (!ids.length) return new Map();
+  const { data } = await supabase.from("images").select("*").in("id", ids);
+  return new Map((data ?? []).map((img) => [img.id, img]));
+};
+
+// ── page ──────────────────────────────────────────────────────────────────────
 
 export default async function Home({ searchParams }) {
   const supabase = createSupabaseServerClient();
@@ -16,7 +44,7 @@ export default async function Home({ searchParams }) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  /* ── Sign-in gate ─────────────────────────────────────────────────────── */
+  /* ── Sign-in gate ──────────────────────────────────────────────────────── */
   if (!user) {
     return (
       <div className="shell">
@@ -32,7 +60,7 @@ export default async function Home({ searchParams }) {
             <h1 className="landing-title">Caption your images</h1>
             <p className="landing-sub">
               Upload any photo and instantly get AI-generated captions.
-              Browse, vote, and sort the community caption feed.
+              Rate captions one at a time and build your personal favourites list.
             </p>
             <SignInButton />
           </div>
@@ -41,65 +69,100 @@ export default async function Home({ searchParams }) {
     );
   }
 
-  /* ── Data fetching ────────────────────────────────────────────────────── */
-  const userEmail = user?.email ?? null;
-  const currentSort = searchParams?.sort || "recent";
-  const currentPage = Math.max(1, Number.parseInt(searchParams?.page, 10) || 1);
-  const from = (currentPage - 1) * PAGE_SIZE;
-  const to = from + PAGE_SIZE - 1;
+  /* ── Tab routing ───────────────────────────────────────────────────────── */
+  const tab = searchParams?.tab ?? "rate"; // "rate" | "liked" | "disliked"
 
-  let query = supabase
-    .from("captions")
-    .select(
-      `id, content, like_count, image_id, image:images (*)`,
-      { count: "exact" }
-    )
-    .range(from, to);
+  /* ── Fetch data for the active tab ────────────────────────────────────── */
+  let rateCaption    = null; // single caption for the "rate" tab
+  let rateImage      = null;
+  let likedCaptions  = [];   // array for "liked" tab
+  let dislikedCaptions = []; // array for "disliked" tab
+  let likedImages    = new Map();
+  let dislikedImages = new Map();
+  let feedError      = null;
 
-  if (currentSort === "likes_desc") {
-    query = query
-      .order("like_count", { ascending: false })
-      .order("created_datetime_utc", { ascending: false });
-  } else if (currentSort === "likes_asc") {
-    query = query
-      .order("like_count", { ascending: true })
-      .order("created_datetime_utc", { ascending: false });
-  } else {
-    query = query.order("created_datetime_utc", { ascending: false });
-  }
-
-  const { data: captions, error, count } = await query;
-
-  let voteByCaptionId = new Map();
-  const captionIds = (captions ?? []).map((c) => c.id);
-  if (captionIds.length > 0) {
-    const { data: existingVotes } = await supabase
+  if (tab === "rate") {
+    // Find one caption the user has NOT yet voted on, ordered randomly
+    // Strategy: get the IDs the user has already voted on, then exclude them.
+    const { data: votedRows } = await supabase
       .from("caption_votes")
-      .select("caption_id, vote_value")
+      .select("caption_id")
+      .eq("profile_id", user.id);
+
+    const votedIds = (votedRows ?? []).map((r) => r.caption_id);
+
+    let q = supabase
+      .from("captions")
+      .select("id, content, like_count, image_id")
+      .limit(1);
+
+    if (votedIds.length > 0) {
+      q = q.not("id", "in", `(${votedIds.join(",")})`);
+    }
+
+    const { data, error } = await q;
+    if (error) {
+      feedError = error.message;
+    } else {
+      rateCaption = data?.[0] ?? null;
+      if (rateCaption?.image_id) {
+        const imageById = await fetchImagesByIds(supabase, [rateCaption.image_id]);
+        rateImage = imageById.get(rateCaption.image_id) ?? null;
+      }
+    }
+  } else if (tab === "liked") {
+    const { data: votes, error } = await supabase
+      .from("caption_votes")
+      .select("caption_id")
       .eq("profile_id", user.id)
-      .in("caption_id", captionIds);
-    voteByCaptionId = new Map(
-      (existingVotes ?? []).map((v) => [v.caption_id, v.vote_value])
-    );
+      .eq("vote_value", 1)
+      .order("created_datetime_utc", { ascending: false });
+
+    if (error) {
+      feedError = error.message;
+    } else {
+      const ids = (votes ?? []).map((v) => v.caption_id);
+      if (ids.length) {
+        const { data } = await supabase
+          .from("captions")
+          .select("id, content, like_count, image_id")
+          .in("id", ids);
+        likedCaptions = data ?? [];
+        likedImages = await fetchImagesByIds(
+          supabase,
+          [...new Set(likedCaptions.map((c) => c.image_id).filter(Boolean))]
+        );
+      }
+    }
+  } else if (tab === "disliked") {
+    const { data: votes, error } = await supabase
+      .from("caption_votes")
+      .select("caption_id")
+      .eq("profile_id", user.id)
+      .eq("vote_value", -1)
+      .order("created_datetime_utc", { ascending: false });
+
+    if (error) {
+      feedError = error.message;
+    } else {
+      const ids = (votes ?? []).map((v) => v.caption_id);
+      if (ids.length) {
+        const { data } = await supabase
+          .from("captions")
+          .select("id, content, like_count, image_id")
+          .in("id", ids);
+        dislikedCaptions = data ?? [];
+        dislikedImages = await fetchImagesByIds(
+          supabase,
+          [...new Set(dislikedCaptions.map((c) => c.image_id).filter(Boolean))]
+        );
+      }
+    }
   }
 
-  const resolveImageUrl = (image) =>
-    image?.url || image?.image_url || image?.public_url ||
-    image?.file_url || image?.storage_url || image?.storage_path || null;
+  const userEmail = user?.email ?? null;
 
-  const totalPages = count ? Math.max(1, Math.ceil(count / PAGE_SIZE)) : 1;
-  const prevPage = currentPage > 1 ? currentPage - 1 : null;
-  const nextPage = count && currentPage < totalPages ? currentPage + 1 : null;
-  const sortParam = currentSort !== "recent" ? `&sort=${currentSort}` : "";
-
-  const redirectParams = new URLSearchParams();
-  Object.entries(searchParams ?? {}).forEach(([key, value]) => {
-    if (typeof value === "string") redirectParams.set(key, value);
-    else if (Array.isArray(value) && value.length > 0) redirectParams.set(key, value[0]);
-  });
-  const redirectTo = redirectParams.toString() ? `/?${redirectParams.toString()}` : "/";
-
-  /* ── Authenticated shell ──────────────────────────────────────────────── */
+  /* ── Render ────────────────────────────────────────────────────────────── */
   return (
     <div className="shell">
       {/* Navbar */}
@@ -122,113 +185,166 @@ export default async function Home({ searchParams }) {
       {/* Two-column body */}
       <div className="page-body">
 
-        {/* ── Left: sticky upload panel ─────────────────────────────────── */}
+        {/* ── Left: sticky upload panel ───────────────────────────────────── */}
         <aside className="panel-upload">
           <UploadImage />
         </aside>
 
-        {/* ── Right: caption feed ───────────────────────────────────────── */}
+        {/* ── Right: feed panel ──────────────────────────────────────────── */}
         <main className="panel-feed">
-          <div className="feed-header">
-            <h2 className="feed-title">Caption Feed</h2>
-            <CaptionSort value={currentSort} />
+
+          {/* Tab bar */}
+          <div className="tab-bar" role="tablist">
+            <a
+              href="/?tab=rate"
+              className={`tab-btn${tab === "rate" ? " tab-btn--active" : ""}`}
+              role="tab"
+              aria-selected={tab === "rate"}
+            >
+              Rate
+            </a>
+            <a
+              href="/?tab=liked"
+              className={`tab-btn${tab === "liked" ? " tab-btn--active" : ""}`}
+              role="tab"
+              aria-selected={tab === "liked"}
+            >
+              👍 Liked
+            </a>
+            <a
+              href="/?tab=disliked"
+              className={`tab-btn${tab === "disliked" ? " tab-btn--active" : ""}`}
+              role="tab"
+              aria-selected={tab === "disliked"}
+            >
+              👎 Disliked
+            </a>
           </div>
 
-          {error ? (
+          {/* Error */}
+          {feedError && (
             <div className="feed-error" role="alert">
-              Failed to load captions: {error.message}
+              Failed to load: {feedError}
             </div>
-          ) : captions && captions.length > 0 ? (
-            <>
-              <div className="caption-grid" role="list">
-                {captions.map((caption) => {
-                  const imageUrl = resolveImageUrl(caption.image);
-                  const voteValue = voteByCaptionId.get(caption.id);
-                  const hasUpvoted = voteValue === 1;
-                  const hasDownvoted = voteValue === -1;
+          )}
 
+          {/* ── Rate tab ─────────────────────────────────────────────────── */}
+          {!feedError && tab === "rate" && (
+            rateCaption ? (
+              <div className="rate-card">
+                {/* Image */}
+                <div className="rate-image-wrap">
+                  {resolveImageUrl(rateImage) ? (
+                    <img
+                      className="rate-image"
+                      src={resolveImageUrl(rateImage)}
+                      alt={rateCaption.content || "Caption image"}
+                    />
+                  ) : (
+                    <div className="rate-image--placeholder">No image</div>
+                  )}
+                </div>
+
+                {/* Caption */}
+                <p className="rate-caption-text">{rateCaption.content}</p>
+
+                {/* Vote buttons */}
+                <form className="rate-vote-form" action={submitCaptionVote}>
+                  <input type="hidden" name="caption_id" value={rateCaption.id} />
+                  <input type="hidden" name="redirect_to" value="/?tab=rate" />
+                  <button
+                    className="rate-vote-btn rate-vote-btn--up"
+                    type="submit"
+                    name="vote"
+                    value="up"
+                    aria-label="Upvote this caption"
+                  >
+                    👍
+                  </button>
+                  <button
+                    className="rate-vote-btn rate-vote-btn--down"
+                    type="submit"
+                    name="vote"
+                    value="down"
+                    aria-label="Downvote this caption"
+                  >
+                    👎
+                  </button>
+                </form>
+              </div>
+            ) : (
+              <div className="feed-empty" role="status">
+                🎉 You&apos;ve rated everything! Check your liked and disliked tabs.
+              </div>
+            )
+          )}
+
+          {/* ── Liked tab ────────────────────────────────────────────────── */}
+          {!feedError && tab === "liked" && (
+            likedCaptions.length > 0 ? (
+              <div className="caption-grid" role="list">
+                {likedCaptions.map((caption) => {
+                  const imgUrl = resolveImageUrl(likedImages.get(caption.image_id));
                   return (
                     <article className="caption-card" key={caption.id} role="listitem">
-                      {/* Image */}
                       <div className="caption-image-wrap">
-                        {imageUrl ? (
-                          <img
-                            className="caption-image"
-                            src={imageUrl}
-                            alt={caption.content || "Caption image"}
-                            loading="lazy"
-                          />
+                        {imgUrl ? (
+                          <img className="caption-image" src={imgUrl} alt={caption.content} loading="lazy" />
                         ) : (
-                          <div className="caption-image--placeholder">
-                            No image
-                          </div>
+                          <div className="caption-image--placeholder">No image</div>
                         )}
                       </div>
-
-                      {/* Body */}
                       <div className="caption-body">
-                        <p className="caption-text">
-                          {caption.content || "Untitled caption"}
-                        </p>
-
+                        <p className="caption-text">{caption.content}</p>
                         <div className="caption-footer">
-                          <span className="caption-like-badge">
-                            ♥ {caption.like_count ?? 0}
-                          </span>
-
-                          <form className="vote-form" action={submitCaptionVote}>
-                            <input type="hidden" name="caption_id" value={caption.id} />
-                            <input type="hidden" name="redirect_to" value={redirectTo} />
-                            <button
-                              className={`vote-btn ${hasUpvoted ? "vote-btn--up-active" : ""}`}
-                              type="submit" name="vote" value="up"
-                              aria-pressed={hasUpvoted} disabled={hasUpvoted}
-                            >
-                              ↑ Up
-                            </button>
-                            <button
-                              className={`vote-btn ${hasDownvoted ? "vote-btn--down-active" : ""}`}
-                              type="submit" name="vote" value="down"
-                              aria-pressed={hasDownvoted} disabled={hasDownvoted}
-                            >
-                              ↓ Down
-                            </button>
-                          </form>
+                          <span className="caption-like-badge">♥ {caption.like_count ?? 0}</span>
+                          <span className="voted-badge voted-badge--up">👍 Liked</span>
                         </div>
                       </div>
                     </article>
                   );
                 })}
               </div>
-
-              {/* Pagination */}
-              <div className="pagination">
-                <Link
-                  className={`page-btn ${!prevPage ? "page-btn--disabled" : ""}`}
-                  href={prevPage ? `/?page=${prevPage}${sortParam}` : "#"}
-                  aria-disabled={!prevPage}
-                  tabIndex={!prevPage ? -1 : 0}
-                >
-                  ← Prev
-                </Link>
-                <span className="page-status">
-                  {currentPage} / {totalPages}
-                </span>
-                <Link
-                  className={`page-btn ${!nextPage ? "page-btn--disabled" : ""}`}
-                  href={nextPage ? `/?page=${nextPage}${sortParam}` : "#"}
-                  aria-disabled={!nextPage}
-                  tabIndex={!nextPage ? -1 : 0}
-                >
-                  Next →
-                </Link>
+            ) : (
+              <div className="feed-empty" role="status">
+                No liked captions yet — start rating on the Rate tab!
               </div>
-            </>
-          ) : (
-            <div className="feed-empty" role="status">
-              No captions yet — upload an image to generate the first ones!
-            </div>
+            )
           )}
+
+          {/* ── Disliked tab ─────────────────────────────────────────────── */}
+          {!feedError && tab === "disliked" && (
+            dislikedCaptions.length > 0 ? (
+              <div className="caption-grid" role="list">
+                {dislikedCaptions.map((caption) => {
+                  const imgUrl = resolveImageUrl(dislikedImages.get(caption.image_id));
+                  return (
+                    <article className="caption-card" key={caption.id} role="listitem">
+                      <div className="caption-image-wrap">
+                        {imgUrl ? (
+                          <img className="caption-image" src={imgUrl} alt={caption.content} loading="lazy" />
+                        ) : (
+                          <div className="caption-image--placeholder">No image</div>
+                        )}
+                      </div>
+                      <div className="caption-body">
+                        <p className="caption-text">{caption.content}</p>
+                        <div className="caption-footer">
+                          <span className="caption-like-badge">♥ {caption.like_count ?? 0}</span>
+                          <span className="voted-badge voted-badge--down">👎 Disliked</span>
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="feed-empty" role="status">
+                No disliked captions yet.
+              </div>
+            )
+          )}
+
         </main>
       </div>
     </div>
