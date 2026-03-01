@@ -21,7 +21,6 @@ const S = {
   ERROR:       "error",
 };
 
-// Index of the active step (0-based) for the stepper UI
 const STEP_INDEX = {
   [S.PRESIGNING]:  0,
   [S.UPLOADING]:   1,
@@ -36,13 +35,56 @@ const STEPS_META = [
   { label: "Caption" },
 ];
 
+// ── Inline VoteRow component ───────────────────────────────────────────────
+// Handles optimistic up/down votes for a single caption card.
+// voteValue:  1 | -1 | null  (current state for this user)
+// likeCount:  number
+// onVote(dir): "up" | "down" — called when user clicks a button
+function VoteRow({ captionId, voteValue, likeCount, onVote, voting }) {
+  const hasUp   = voteValue === 1;
+  const hasDown = voteValue === -1;
+
+  return (
+    <div className="rc-vote-row">
+      <span className="rc-like-badge">♥ {likeCount ?? 0}</span>
+      <div className="rc-vote-btns">
+        <button
+          type="button"
+          className={["rc-vote-btn", hasUp ? "rc-vote-btn--up-active" : ""].filter(Boolean).join(" ")}
+          onClick={() => onVote("up")}
+          disabled={voting}
+          aria-pressed={hasUp}
+          aria-label="Upvote this caption"
+        >
+          ↑ Up
+        </button>
+        <button
+          type="button"
+          className={["rc-vote-btn", hasDown ? "rc-vote-btn--down-active" : ""].filter(Boolean).join(" ")}
+          onClick={() => onVote("down")}
+          disabled={voting}
+          aria-pressed={hasDown}
+          aria-label="Downvote this caption"
+        >
+          ↓ Down
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── Main component ─────────────────────────────────────────────────────────
 export default function UploadImage() {
-  const [step, setStep]           = useState(S.IDLE);
-  const [error, setError]         = useState(null);
-  const [preview, setPreview]     = useState(null);
-  const [captions, setCaptions]   = useState([]);
+  const [step, setStep]               = useState(S.IDLE);
+  const [error, setError]             = useState(null);
+  const [preview, setPreview]         = useState(null);
+  const [captions, setCaptions]       = useState([]);
   const [resultImage, setResultImage] = useState(null);
   const [isDragging, setIsDragging]   = useState(false);
+
+  // votes: Map<captionId, { voteValue: 1|-1|null, likeCount: number, voting: bool }>
+  const [votes, setVotes] = useState(new Map());
+
   const fileInputRef = useRef(null);
 
   const reset = () => {
@@ -51,17 +93,20 @@ export default function UploadImage() {
     setPreview(null);
     setCaptions([]);
     setResultImage(null);
+    setVotes(new Map());
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
+  // ── Pipeline ─────────────────────────────────────────────────────────────
   const runPipeline = useCallback(async (file) => {
     setError(null);
     setCaptions([]);
     setResultImage(null);
+    setVotes(new Map());
     setPreview(URL.createObjectURL(file));
 
     try {
-      // ── Step 1: Presign ────────────────────────────────────────────────
+      // Step 1: Presign
       setStep(S.PRESIGNING);
       const presignRes  = await fetch("/api/presign", {
         method: "POST",
@@ -75,7 +120,7 @@ export default function UploadImage() {
       if (!presignedUrl) throw new Error("Presign response missing presignedUrl. Got: " + JSON.stringify(presignData));
       if (!cdnUrl)       throw new Error("Presign response missing cdnUrl. Got: "        + JSON.stringify(presignData));
 
-      // ── Step 2: Upload directly to S3 ─────────────────────────────────
+      // Step 2: Upload bytes directly to S3
       setStep(S.UPLOADING);
       const uploadRes = await fetch(presignedUrl, {
         method: "PUT",
@@ -84,7 +129,7 @@ export default function UploadImage() {
       });
       if (!uploadRes.ok) throw new Error(`Upload failed (${uploadRes.status} ${uploadRes.statusText})`);
 
-      // ── Step 3: Register with pipeline ────────────────────────────────
+      // Step 3: Register with pipeline
       setStep(S.REGISTERING);
       const registerRes  = await fetch("/api/register", {
         method: "POST",
@@ -98,7 +143,7 @@ export default function UploadImage() {
       if (!imageId) throw new Error("Register response missing imageId. Got: " + JSON.stringify(registerData));
       setResultImage(cdnUrl);
 
-      // ── Step 4: Generate captions ──────────────────────────────────────
+      // Step 4: Generate captions
       setStep(S.CAPTIONING);
       const captionRes  = await fetch("/api/captions", {
         method: "POST",
@@ -109,12 +154,25 @@ export default function UploadImage() {
       if (!captionRes.ok) throw new Error(captionData.error || "Failed to generate captions");
 
       const rawCaptions = Array.isArray(captionData) ? captionData : [];
-      setCaptions(
-        rawCaptions.map((c, i) => ({
-          id: c.id ?? i,
-          content: typeof c === "string" ? c : c.content || c.caption || c.text || JSON.stringify(c),
-        }))
-      );
+      const normalised  = rawCaptions.map((c, i) => ({
+        id:      c.id ?? i,
+        content: typeof c === "string" ? c : c.content || c.caption || c.text || JSON.stringify(c),
+        like_count: c.like_count ?? 0,
+      }));
+
+      setCaptions(normalised);
+
+      // Seed the vote map from the API response (user's existing votes, if returned)
+      const initVotes = new Map();
+      normalised.forEach((c) => {
+        initVotes.set(c.id, {
+          voteValue: c.vote_value ?? null,   // server may or may not send this
+          likeCount: c.like_count,
+          voting: false,
+        });
+      });
+      setVotes(initVotes);
+
       setStep(S.DONE);
     } catch (err) {
       console.error("[UploadImage]", err);
@@ -122,6 +180,62 @@ export default function UploadImage() {
       setStep(S.ERROR);
     }
   }, []);
+
+  // ── Vote handler ─────────────────────────────────────────────────────────
+  const handleVote = useCallback(async (captionId, dir) => {
+    const current = votes.get(captionId) ?? { voteValue: null, likeCount: 0, voting: false };
+    if (current.voting) return;
+
+    // Clicking the same direction again = remove vote (toggle off)
+    const newDir       = current.voteValue === (dir === "up" ? 1 : -1) ? null : dir;
+    const newVoteValue = newDir === "up" ? 1 : newDir === "down" ? -1 : null;
+
+    // Optimistic like-count delta
+    const oldValue  = current.voteValue ?? 0;
+    const nextValue = newVoteValue ?? 0;
+    const delta     = nextValue - oldValue;
+
+    // Apply optimistic update immediately
+    setVotes((prev) => {
+      const next = new Map(prev);
+      next.set(captionId, {
+        voteValue: newVoteValue,
+        likeCount: (current.likeCount ?? 0) + delta,
+        voting: true,
+      });
+      return next;
+    });
+
+    try {
+      const res  = await fetch("/api/vote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ caption_id: captionId, vote: newDir }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) throw new Error(data.error || "Vote failed");
+
+      // Settle with server-confirmed values
+      setVotes((prev) => {
+        const next = new Map(prev);
+        next.set(captionId, {
+          voteValue: data.vote_value,
+          likeCount: data.like_count ?? (current.likeCount ?? 0) + delta,
+          voting: false,
+        });
+        return next;
+      });
+    } catch (err) {
+      console.error("[vote]", err);
+      // Roll back optimistic update on failure
+      setVotes((prev) => {
+        const next = new Map(prev);
+        next.set(captionId, { ...current, voting: false });
+        return next;
+      });
+    }
+  }, [votes]);
 
   const handleFile = (file) => {
     if (!file) return;
@@ -138,13 +252,13 @@ export default function UploadImage() {
 
   return (
     <div className="upload-card">
-      {/* Card header */}
       <div className="upload-card-header">
         <h2 className="upload-card-title">Generate Captions</h2>
       </div>
 
       <div className="upload-card-body">
-        {/* ── Drop zone ──────────────────────────────────────────────────── */}
+
+        {/* ── Drop zone (hidden once results are shown) ─────────────────── */}
         {step !== S.DONE && (
           <div
             className={[
@@ -166,9 +280,7 @@ export default function UploadImage() {
             ) : (
               <div className="dropzone-placeholder">
                 <span className="dropzone-icon" aria-hidden="true">☁️</span>
-                <span className="dropzone-label">
-                  Drop image or <span>browse</span>
-                </span>
+                <span className="dropzone-label">Drop image or <span>browse</span></span>
                 <span className="dropzone-formats">JPEG · PNG · WebP · GIF · HEIC</span>
               </div>
             )}
@@ -201,9 +313,7 @@ export default function UploadImage() {
                     isActive ? "stepper-step--active" : "",
                   ].filter(Boolean).join(" ")}
                 >
-                  <div className="stepper-dot">
-                    {isDone ? "✓" : i + 1}
-                  </div>
+                  <div className="stepper-dot">{isDone ? "✓" : i + 1}</div>
                   <span className="stepper-label">{s.label}</span>
                 </div>
               );
@@ -215,43 +325,51 @@ export default function UploadImage() {
         {step === S.ERROR && (
           <div className="upload-error-banner" role="alert">
             <p className="upload-error-msg">⚠️ {error}</p>
-            <button className="btn btn-ghost btn-sm" onClick={reset}>
-              Try again
-            </button>
+            <button className="btn btn-ghost btn-sm" onClick={reset}>Try again</button>
           </div>
         )}
 
-        {/* ── Results ────────────────────────────────────────────────────── */}
+        {/* ── Results + voting ───────────────────────────────────────────── */}
         {step === S.DONE && (
           <div className="upload-results">
-            {/* Uploaded image */}
+
+            {/* Uploaded image thumbnail */}
             {resultImage && (
               <div className="upload-result-img-wrap">
                 <img className="upload-result-img" src={resultImage} alt="Uploaded image" />
               </div>
             )}
 
-            {/* Caption list */}
             <p className="upload-result-label">
               {captions.length > 0
-                ? `${captions.length} caption${captions.length !== 1 ? "s" : ""} generated`
+                ? `${captions.length} caption${captions.length !== 1 ? "s" : ""} — vote for your favourite`
                 : "No captions returned"}
             </p>
 
             {captions.length > 0 && (
               <ol className="upload-captions-list" aria-label="Generated captions">
-                {captions.map((c, i) => (
-                  <li key={c.id} className="upload-caption-item">
-                    <span className="upload-caption-num">{i + 1}</span>
-                    <span>{c.content}</span>
-                  </li>
-                ))}
+                {captions.map((c, i) => {
+                  const v = votes.get(c.id) ?? { voteValue: null, likeCount: c.like_count ?? 0, voting: false };
+                  return (
+                    <li key={c.id} className="upload-caption-item">
+                      <div className="rc-caption-content">
+                        <span className="upload-caption-num">{i + 1}</span>
+                        <span className="rc-caption-text">{c.content}</span>
+                      </div>
+                      <VoteRow
+                        captionId={c.id}
+                        voteValue={v.voteValue}
+                        likeCount={v.likeCount}
+                        voting={v.voting}
+                        onVote={(dir) => handleVote(c.id, dir)}
+                      />
+                    </li>
+                  );
+                })}
               </ol>
             )}
 
-            <button className="btn btn-ghost btn-sm" onClick={reset}>
-              ↑ Upload another
-            </button>
+            <button className="btn btn-ghost btn-sm" onClick={reset}>↑ Upload another</button>
           </div>
         )}
       </div>
