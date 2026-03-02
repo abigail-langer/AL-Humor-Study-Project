@@ -70,20 +70,25 @@ export default async function Home({ searchParams }) {
   }
 
   /* ── Tab routing ───────────────────────────────────────────────────────── */
-  const tab = searchParams?.tab ?? "rate"; // "rate" | "liked" | "disliked"
+  // tabs: "rate" | "liked" | "disliked" | "uploads"
+  const tab = searchParams?.tab ?? "rate";
 
-  /* ── Fetch data for the active tab ────────────────────────────────────── */
-  let rateCaption    = null; // single caption for the "rate" tab
-  let rateImage      = null;
-  let likedCaptions  = [];   // array for "liked" tab
-  let dislikedCaptions = []; // array for "disliked" tab
-  let likedImages    = new Map();
-  let dislikedImages = new Map();
-  let feedError      = null;
+  /* ── Per-tab data fetching ─────────────────────────────────────────────── */
+  let rateCaption      = null;
+  let rateImage        = null;
+  let likedCaptions    = [];
+  let dislikedCaptions = [];
+  let likedImages      = new Map();
+  let dislikedImages   = new Map();
+
+  // "uploads" tab data: images the user uploaded, each with their captions
+  let uploadedImages   = [];   // array of image rows
+  // captionsByImageId: Map<imageId, caption[]>
+  let captionsByImageId = new Map();
+
+  let feedError = null;
 
   if (tab === "rate") {
-    // Find one caption the user has NOT yet voted on, ordered randomly
-    // Strategy: get the IDs the user has already voted on, then exclude them.
     const { data: votedRows } = await supabase
       .from("caption_votes")
       .select("caption_id")
@@ -110,6 +115,7 @@ export default async function Home({ searchParams }) {
         rateImage = imageById.get(rateCaption.image_id) ?? null;
       }
     }
+
   } else if (tab === "liked") {
     const { data: votes, error } = await supabase
       .from("caption_votes")
@@ -134,6 +140,7 @@ export default async function Home({ searchParams }) {
         );
       }
     }
+
   } else if (tab === "disliked") {
     const { data: votes, error } = await supabase
       .from("caption_votes")
@@ -156,6 +163,41 @@ export default async function Home({ searchParams }) {
           supabase,
           [...new Set(dislikedCaptions.map((c) => c.image_id).filter(Boolean))]
         );
+      }
+    }
+
+  } else if (tab === "uploads") {
+    // Fetch images uploaded by this user.
+    // The images table is expected to have a profile_id (or user_id) column
+    // linking the row to the uploader. We try profile_id first; if that column
+    // doesn't exist Supabase returns an error and we surface a clear message.
+    const { data: imgs, error: imgError } = await supabase
+      .from("images")
+      .select("*")
+      .eq("profile_id", user.id)
+      .order("created_datetime_utc", { ascending: false });
+
+    if (imgError) {
+      feedError = imgError.message;
+    } else {
+      uploadedImages = imgs ?? [];
+
+      // Fetch all captions for these images in one query
+      const imageIds = uploadedImages.map((img) => img.id).filter(Boolean);
+      if (imageIds.length) {
+        const { data: caps } = await supabase
+          .from("captions")
+          .select("id, content, like_count, image_id")
+          .in("image_id", imageIds)
+          .order("created_datetime_utc", { ascending: true });
+
+        // Group captions by image_id
+        for (const cap of caps ?? []) {
+          if (!captionsByImageId.has(cap.image_id)) {
+            captionsByImageId.set(cap.image_id, []);
+          }
+          captionsByImageId.get(cap.image_id).push(cap);
+        }
       }
     }
   }
@@ -219,6 +261,14 @@ export default async function Home({ searchParams }) {
             >
               👎 Disliked
             </a>
+            <a
+              href="/?tab=uploads"
+              className={`tab-btn${tab === "uploads" ? " tab-btn--active" : ""}`}
+              role="tab"
+              aria-selected={tab === "uploads"}
+            >
+              🖼️ My Uploads
+            </a>
           </div>
 
           {/* Error */}
@@ -232,7 +282,6 @@ export default async function Home({ searchParams }) {
           {!feedError && tab === "rate" && (
             rateCaption ? (
               <div className="rate-card">
-                {/* Image */}
                 <div className="rate-image-wrap">
                   {resolveImageUrl(rateImage) ? (
                     <img
@@ -244,32 +293,20 @@ export default async function Home({ searchParams }) {
                     <div className="rate-image--placeholder">No image</div>
                   )}
                 </div>
-
-                {/* Caption */}
                 <p className="rate-caption-text">{rateCaption.content}</p>
-
-                {/* Vote buttons */}
                 <form className="rate-vote-form" action={submitCaptionVote}>
                   <input type="hidden" name="caption_id" value={rateCaption.id} />
                   <input type="hidden" name="redirect_to" value="/?tab=rate" />
                   <button
                     className="rate-vote-btn rate-vote-btn--up"
-                    type="submit"
-                    name="vote"
-                    value="up"
+                    type="submit" name="vote" value="up"
                     aria-label="Upvote this caption"
-                  >
-                    👍
-                  </button>
+                  >👍</button>
                   <button
                     className="rate-vote-btn rate-vote-btn--down"
-                    type="submit"
-                    name="vote"
-                    value="down"
+                    type="submit" name="vote" value="down"
                     aria-label="Downvote this caption"
-                  >
-                    👎
-                  </button>
+                  >👎</button>
                 </form>
               </div>
             ) : (
@@ -288,11 +325,9 @@ export default async function Home({ searchParams }) {
                   return (
                     <article className="caption-card" key={caption.id} role="listitem">
                       <div className="caption-image-wrap">
-                        {imgUrl ? (
-                          <img className="caption-image" src={imgUrl} alt={caption.content} loading="lazy" />
-                        ) : (
-                          <div className="caption-image--placeholder">No image</div>
-                        )}
+                        {imgUrl
+                          ? <img className="caption-image" src={imgUrl} alt={caption.content} loading="lazy" />
+                          : <div className="caption-image--placeholder">No image</div>}
                       </div>
                       <div className="caption-body">
                         <p className="caption-text">{caption.content}</p>
@@ -321,11 +356,9 @@ export default async function Home({ searchParams }) {
                   return (
                     <article className="caption-card" key={caption.id} role="listitem">
                       <div className="caption-image-wrap">
-                        {imgUrl ? (
-                          <img className="caption-image" src={imgUrl} alt={caption.content} loading="lazy" />
-                        ) : (
-                          <div className="caption-image--placeholder">No image</div>
-                        )}
+                        {imgUrl
+                          ? <img className="caption-image" src={imgUrl} alt={caption.content} loading="lazy" />
+                          : <div className="caption-image--placeholder">No image</div>}
                       </div>
                       <div className="caption-body">
                         <p className="caption-text">{caption.content}</p>
@@ -341,6 +374,59 @@ export default async function Home({ searchParams }) {
             ) : (
               <div className="feed-empty" role="status">
                 No disliked captions yet.
+              </div>
+            )
+          )}
+
+          {/* ── My Uploads tab ───────────────────────────────────────────── */}
+          {!feedError && tab === "uploads" && (
+            uploadedImages.length > 0 ? (
+              <div className="uploads-list">
+                {uploadedImages.map((img) => {
+                  const imgUrl = resolveImageUrl(img);
+                  const captions = captionsByImageId.get(img.id) ?? [];
+                  return (
+                    <div className="upload-entry" key={img.id}>
+                      {/* Image */}
+                      <div className="upload-entry-image-wrap">
+                        {imgUrl ? (
+                          <img
+                            className="upload-entry-image"
+                            src={imgUrl}
+                            alt="Uploaded image"
+                            loading="lazy"
+                          />
+                        ) : (
+                          <div className="upload-entry-image--placeholder">No image</div>
+                        )}
+                      </div>
+
+                      {/* Captions list */}
+                      <div className="upload-entry-captions">
+                        <p className="upload-entry-caption-heading">
+                          {captions.length > 0
+                            ? `${captions.length} caption${captions.length !== 1 ? "s" : ""}`
+                            : "No captions yet"}
+                        </p>
+                        {captions.length > 0 && (
+                          <ol className="upload-entry-caption-list">
+                            {captions.map((c, i) => (
+                              <li key={c.id} className="upload-entry-caption-item">
+                                <span className="upload-entry-caption-num">{i + 1}</span>
+                                <span className="upload-entry-caption-text">{c.content}</span>
+                                <span className="caption-like-badge">♥ {c.like_count ?? 0}</span>
+                              </li>
+                            ))}
+                          </ol>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="feed-empty" role="status">
+                No uploads yet — use the panel on the left to upload your first image!
               </div>
             )
           )}

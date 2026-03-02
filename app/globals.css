@@ -929,3 +929,112 @@ a { color: inherit; }
   color: var(--red-fg);
   border: 1px solid var(--red-brd);
 }
+
+/* ─── My Uploads tab ─────────────────────────────────────────────────────── */
+.uploads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.upload-entry {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+  transition: box-shadow 0.2s ease;
+}
+
+.upload-entry:hover {
+  box-shadow: var(--shadow-md);
+}
+
+@media (max-width: 680px) {
+  .upload-entry {
+    grid-template-columns: 1fr;
+  }
+}
+
+.upload-entry-image-wrap {
+  aspect-ratio: 1 / 1;
+  background: var(--ink-100);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.upload-entry-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.upload-entry-image--placeholder {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 0.82rem;
+  color: var(--ink-400);
+}
+
+.upload-entry-captions {
+  padding: 18px 20px 18px 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+@media (max-width: 680px) {
+  .upload-entry-captions {
+    padding: 0 16px 18px;
+  }
+}
+
+.upload-entry-caption-heading {
+  margin: 0;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--ink-400);
+}
+
+.upload-entry-caption-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upload-entry-caption-item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: var(--r-md);
+  background: var(--brand-50);
+  border: 1px solid var(--brand-100);
+}
+
+.upload-entry-caption-num {
+  font-size: 0.7rem;
+  font-weight: 800;
+  color: var(--brand-500);
+  flex-shrink: 0;
+  min-width: 16px;
+}
+
+.upload-entry-caption-text {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--ink-800);
+  flex: 1;
+  min-width: 0;
+}
