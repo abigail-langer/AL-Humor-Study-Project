@@ -28,7 +28,6 @@ export async function submitCaptionVote(formData) {
   const voteDirection = formData.get("vote");
   const voteValue =
     voteDirection === "up" ? 1 : voteDirection === "down" ? -1 : null;
-  const now = new Date().toISOString();
 
   if (typeof captionId !== "string" || captionId.length === 0 || voteValue === null) {
     redirect(redirectTo);
@@ -38,7 +37,8 @@ export async function submitCaptionVote(formData) {
     caption_id: captionId,
     profile_id: user.id,
     vote_value: voteValue,
-    created_datetime_utc: now,
+    created_by_user_id: user.id,
+    modified_by_user_id: user.id,
   });
 
   if (insertError?.code === "23505") {
@@ -46,7 +46,7 @@ export async function submitCaptionVote(formData) {
       .from("caption_votes")
       .update({
         vote_value: voteValue,
-        modified_datetime_utc: now,
+        modified_by_user_id: user.id,
       })
       .eq("profile_id", user.id)
       .eq("caption_id", captionId);
