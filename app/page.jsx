@@ -1,7 +1,7 @@
 import SignInButton from "./SignInButton";
 import SignOutButton from "./SignOutButton";
 import UploadImage from "./UploadImage";
-import { submitCaptionVote } from "./actions";
+import RateCard from "./RateCard";
 import { createSupabaseServerClient } from "../lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
@@ -281,34 +281,10 @@ export default async function Home({ searchParams }) {
           {/* ── Rate tab ─────────────────────────────────────────────────── */}
           {!feedError && tab === "rate" && (
             rateCaption ? (
-              <div className="rate-card">
-                <div className="rate-image-wrap">
-                  {resolveImageUrl(rateImage) ? (
-                    <img
-                      className="rate-image"
-                      src={resolveImageUrl(rateImage)}
-                      alt={rateCaption.content || "Caption image"}
-                    />
-                  ) : (
-                    <div className="rate-image--placeholder">No image</div>
-                  )}
-                </div>
-                <p className="rate-caption-text">{rateCaption.content}</p>
-                <form className="rate-vote-form" action={submitCaptionVote}>
-                  <input type="hidden" name="caption_id" value={rateCaption.id} />
-                  <input type="hidden" name="redirect_to" value="/?tab=rate" />
-                  <button
-                    className="rate-vote-btn rate-vote-btn--up"
-                    type="submit" name="vote" value="up"
-                    aria-label="Upvote this caption"
-                  >👍</button>
-                  <button
-                    className="rate-vote-btn rate-vote-btn--down"
-                    type="submit" name="vote" value="down"
-                    aria-label="Downvote this caption"
-                  >👎</button>
-                </form>
-              </div>
+              <RateCard
+                caption={rateCaption}
+                imageUrl={resolveImageUrl(rateImage)}
+              />
             ) : (
               <div className="feed-empty" role="status">
                 🎉 You&apos;ve rated everything! Check your liked and disliked tabs.
