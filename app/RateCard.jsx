@@ -1,28 +1,33 @@
 "use client";
 
 import { useState, useRef } from "react";
-import { submitCaptionVote } from "./actions";
+import { useRouter } from "next/navigation";
+import { recordVote } from "./actions";
 
-// Exit animation duration must match --rate-exit-duration in globals.css
+// Exit animation duration — keep in sync with the CSS keyframe duration
 const EXIT_MS = 420;
 
 export default function RateCard({ caption, imageUrl }) {
   const [phase, setPhase] = useState("idle"); // "idle" | "exit-up" | "exit-down"
   const formRef = useRef(null);
+  const router = useRouter();
 
   const handleVote = async (direction) => {
     if (phase !== "idle") return;
 
+    // Kick off the exit animation immediately
     setPhase(direction === "up" ? "exit-up" : "exit-down");
 
-    // Let the exit animation play before the server action fires
-    await new Promise((r) => setTimeout(r, EXIT_MS));
-
+    // Record the vote in parallel with the animation
     const fd = new FormData(formRef.current);
     fd.set("vote", direction);
-    await submitCaptionVote(fd);
-    // Server action ends with redirect() → Next.js navigates to /?tab=rate
-    // which re-renders the page with the next caption (enter animation plays)
+    const [_anim, _vote] = await Promise.all([
+      new Promise((r) => setTimeout(r, EXIT_MS)),
+      recordVote(fd),
+    ]);
+
+    // Refresh server component data → next caption loads with enter animation
+    router.refresh();
   };
 
   const isExiting = phase !== "idle";
