@@ -282,6 +282,7 @@ export default async function Home({ searchParams }) {
           {!feedError && tab === "rate" && (
             rateCaption ? (
               <RateCard
+                key={rateCaption.id}
                 caption={rateCaption}
                 imageUrl={resolveImageUrl(rateImage)}
               />
