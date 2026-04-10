@@ -62,8 +62,10 @@ export async function submitCaptionVote(formData) {
   redirect(redirectTo);
 }
 
-// Same DB logic but no redirect — used by the animated RateCard client component
-// which drives its own navigation via router.refresh() after the exit animation.
+// Same DB logic but no redirect and no revalidatePath — used by client components
+// that manage their own UI updates. RateCard drives navigation via router.refresh();
+// UploadCaptionVote uses optimistic state and must not trigger a server re-render
+// (which would reorder captions).
 export async function recordVote(formData) {
   const supabase = createSupabaseServerClient();
   const {
@@ -108,6 +110,5 @@ export async function recordVote(formData) {
     return { error: insertError.message };
   }
 
-  revalidatePath("/");
   return { ok: true };
 }
