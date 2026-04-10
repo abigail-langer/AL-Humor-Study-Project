@@ -1,23 +1,20 @@
 "use client";
 
 import { useState } from "react";
-import { useRouter } from "next/navigation";
 import { recordVote } from "./actions";
 
 export default function UploadCaptionVote({ captionId, initialVote }) {
   const [vote, setVote] = useState(initialVote); // null | "up" | "down"
   const [pending, setPending] = useState(false);
-  const router = useRouter();
 
   const handleVote = async (direction) => {
     if (pending) return;
     setPending(true);
-    setVote(direction); // optimistic update
+    setVote(direction); // optimistic update — no page refresh, order stays fixed
     const fd = new FormData();
     fd.set("caption_id", String(captionId));
     fd.set("vote", direction);
     await recordVote(fd);
-    router.refresh();
     setPending(false);
   };
 
