@@ -2,6 +2,7 @@ import SignInButton from "./SignInButton";
 import SignOutButton from "./SignOutButton";
 import UploadImage from "./UploadImage";
 import RateCard from "./RateCard";
+import UploadCaptionVote from "./UploadCaptionVote";
 import { createSupabaseServerClient } from "../lib/supabaseServer";
 
 export const dynamic = "force-dynamic";
@@ -85,6 +86,8 @@ export default async function Home({ searchParams }) {
   let uploadedImages   = [];   // array of image rows
   // captionsByImageId: Map<imageId, caption[]>
   let captionsByImageId = new Map();
+  // userVotesByCaptionId: Map<captionId, "up" | "down">
+  let userVotesByCaptionId = new Map();
 
   let feedError = null;
 
@@ -192,11 +195,25 @@ export default async function Home({ searchParams }) {
           .order("created_datetime_utc", { ascending: true });
 
         // Group captions by image_id
+        const allCaptionIds = [];
         for (const cap of caps ?? []) {
           if (!captionsByImageId.has(cap.image_id)) {
             captionsByImageId.set(cap.image_id, []);
           }
           captionsByImageId.get(cap.image_id).push(cap);
+          allCaptionIds.push(cap.id);
+        }
+
+        // Fetch this user's existing votes for these captions
+        if (allCaptionIds.length) {
+          const { data: myVotes } = await supabase
+            .from("caption_votes")
+            .select("caption_id, vote_value")
+            .eq("profile_id", user.id)
+            .in("caption_id", allCaptionIds);
+          for (const v of myVotes ?? []) {
+            userVotesByCaptionId.set(v.caption_id, v.vote_value === 1 ? "up" : "down");
+          }
         }
       }
     }
@@ -392,6 +409,10 @@ export default async function Home({ searchParams }) {
                                 <span className="upload-entry-caption-num">{i + 1}</span>
                                 <span className="upload-entry-caption-text">{c.content}</span>
                                 <span className="caption-like-badge">♥ {c.like_count ?? 0}</span>
+                                <UploadCaptionVote
+                                  captionId={c.id}
+                                  initialVote={userVotesByCaptionId.get(c.id) ?? null}
+                                />
                               </li>
                             ))}
                           </ol>

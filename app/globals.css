@@ -1063,7 +1063,7 @@ a { color: inherit; }
 
 .upload-entry-caption-item {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 8px;
   padding: 9px 12px;
   border-radius: var(--r-md);
@@ -1085,4 +1085,65 @@ a { color: inherit; }
   color: var(--ink-800);
   flex: 1;
   min-width: 0;
+}
+
+/* ─── Inline caption vote buttons (My Uploads tab) ───────────────────────── */
+.upload-caption-vote {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.upload-vote-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border-mid);
+  background: var(--bg-card);
+  font-size: 1rem;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  transition: transform 0.13s ease, box-shadow 0.13s ease, border-color 0.13s ease, background 0.13s ease;
+  box-shadow: var(--shadow-sm);
+  line-height: 1;
+  padding: 0;
+}
+
+.upload-vote-btn:hover {
+  transform: scale(1.15);
+  box-shadow: var(--shadow-md);
+}
+
+.upload-vote-btn:active {
+  transform: scale(0.92);
+}
+
+.upload-vote-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+  transform: none;
+}
+
+.upload-vote-btn--up:hover {
+  border-color: var(--green-brd);
+  background: var(--green-bg);
+}
+
+.upload-vote-btn--down:hover {
+  border-color: var(--red-brd);
+  background: var(--red-bg);
+}
+
+.upload-vote-btn--active-up {
+  border-color: var(--green-brd);
+  background: var(--green-bg);
+  box-shadow: 0 0 0 2px var(--green-brd);
+}
+
+.upload-vote-btn--active-down {
+  border-color: var(--red-brd);
+  background: var(--red-bg);
+  box-shadow: 0 0 0 2px var(--red-brd);
 }
