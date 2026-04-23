@@ -71,8 +71,9 @@ export default async function Home({ searchParams }) {
   }
 
   /* ── Tab routing ───────────────────────────────────────────────────────── */
-  // tabs: "rate" | "liked" | "disliked" | "uploads"
-  const tab = searchParams?.tab ?? "rate";
+  const VALID_TABS = ["rate", "liked", "disliked", "uploads"];
+  const rawTab = searchParams?.tab ?? "rate";
+  const tab = VALID_TABS.includes(rawTab) ? rawTab : "rate";
 
   /* ── Per-tab data fetching ─────────────────────────────────────────────── */
   let rateCaption      = null;

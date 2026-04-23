@@ -9,12 +9,16 @@ export default function UploadCaptionVote({ captionId, initialVote }) {
 
   const handleVote = async (direction) => {
     if (pending) return;
+    const previousVote = vote;
     setPending(true);
     setVote(direction); // optimistic update — no page refresh, order stays fixed
     const fd = new FormData();
     fd.set("caption_id", String(captionId));
     fd.set("vote", direction);
-    await recordVote(fd);
+    const result = await recordVote(fd);
+    if (result?.error) {
+      setVote(previousVote); // roll back on failure
+    }
     setPending(false);
   };
 
