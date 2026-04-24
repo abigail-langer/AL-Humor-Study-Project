@@ -9,11 +9,13 @@ const EXIT_MS = 420;
 
 export default function RateCard({ caption, imageUrl }) {
   const [phase, setPhase] = useState("idle"); // "idle" | "exit-up" | "exit-down"
+  const [voteError, setVoteError] = useState(null);
   const formRef = useRef(null);
   const router = useRouter();
 
   const handleVote = async (direction) => {
     if (phase !== "idle") return;
+    setVoteError(null);
 
     // Kick off the exit animation immediately
     setPhase(direction === "up" ? "exit-up" : "exit-down");
@@ -21,10 +23,17 @@ export default function RateCard({ caption, imageUrl }) {
     // Record the vote in parallel with the animation
     const fd = new FormData(formRef.current);
     fd.set("vote", direction);
-    const [_anim, _vote] = await Promise.all([
+    const [_anim, result] = await Promise.all([
       new Promise((r) => setTimeout(r, EXIT_MS)),
       recordVote(fd),
     ]);
+
+    if (result?.error) {
+      // Vote failed — reset so the user can try again
+      setPhase("idle");
+      setVoteError("Could not save your vote. Please try again.");
+      return;
+    }
 
     // Refresh server component data → next caption loads with enter animation
     router.refresh();
@@ -34,6 +43,13 @@ export default function RateCard({ caption, imageUrl }) {
 
   return (
     <div className={`rate-card rate-card--${phase}`} style={{ position: "relative" }}>
+      {/* Vote error */}
+      {voteError && (
+        <div className="feed-error" role="alert" style={{ marginBottom: "0.75rem" }}>
+          {voteError}
+        </div>
+      )}
+
       {/* Vote confirmation overlay */}
       {isExiting && (
         <div
